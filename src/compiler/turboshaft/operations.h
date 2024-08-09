@@ -33,6 +33,7 @@
 #include "src/compiler/turboshaft/snapshot-table.h"
 #include "src/compiler/turboshaft/types.h"
 #include "src/compiler/turboshaft/utils.h"
+#include "src/compiler/turboshaft/zone-with-name.h"
 #include "src/compiler/write-barrier-kind.h"
 #include "src/flags/flags.h"
 
@@ -54,6 +55,9 @@ class Node;
 enum class TrapId : int32_t;
 }  // namespace v8::internal::compiler
 namespace v8::internal::compiler::turboshaft {
+
+inline constexpr char kCompilationZoneName[] = "compilation-zone";
+
 class Block;
 struct FrameStateData;
 class Graph;
@@ -278,6 +282,7 @@ using Variable = SnapshotTable<OpIndex, VariableData>::Key;
   V(Word32PairBinop)                         \
   V(OverflowCheckedBinop)                    \
   V(WordUnary)                               \
+  V(OverflowCheckedUnary)                    \
   V(FloatUnary)                              \
   V(Shift)                                   \
   V(Comparison)                              \
@@ -314,7 +319,8 @@ using Variable = SnapshotTable<OpIndex, VariableData>::Key;
   V(AtomicWord32Pair)                        \
   V(MemoryBarrier)                           \
   V(Comment)                                 \
-  V(Dead)
+  V(Dead)                                    \
+  V(AbortCSADcheck)
 
 // These are operations used in the frontend and are mostly tied to JS
 // semantics.
@@ -1385,6 +1391,25 @@ struct DeadOp : FixedArityOperationT<0, DeadOp> {
   auto options() const { return std::tuple{}; }
 };
 
+struct AbortCSADcheckOp : FixedArityOperationT<1, AbortCSADcheckOp> {
+  static constexpr OpEffects effects =
+      OpEffects().RequiredWhenUnused().CanLeaveCurrentFunction();
+
+  base::Vector<const RegisterRepresentation> outputs_rep() const { return {}; }
+
+  base::Vector<const MaybeRegisterRepresentation> inputs_rep(
+      ZoneVector<MaybeRegisterRepresentation>& storage) const {
+    return MaybeRepVector<MaybeRegisterRepresentation::Tagged()>();
+  }
+
+  V<String> message() { return Base::input<String>(0); }
+
+  explicit AbortCSADcheckOp(V<String> message) : Base(message) {}
+
+  void Validate(const Graph& graph) const {}
+  auto options() const { return std::tuple{}; }
+};
+
 struct GenericBinopOp : FixedArityOperationT<4, GenericBinopOp> {
 #define GENERIC_BINOP_LIST(V) \
   V(Add)                      \
@@ -1844,6 +1869,43 @@ struct WordUnaryOp : FixedArityOperationT<1, WordUnaryOp> {
 };
 V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
                                            WordUnaryOp::Kind kind);
+
+struct OverflowCheckedUnaryOp
+    : FixedArityOperationT<1, OverflowCheckedUnaryOp> {
+  static constexpr int kValueIndex = 0;
+  static constexpr int kOverflowIndex = 1;
+
+  enum class Kind : uint8_t { kAbs };
+  Kind kind;
+  WordRepresentation rep;
+  static constexpr OpEffects effects = OpEffects();
+  base::Vector<const RegisterRepresentation> outputs_rep() const {
+    switch (rep.value()) {
+      case WordRepresentation::Word32():
+        return RepVector<RegisterRepresentation::Word32(),
+                         RegisterRepresentation::Word32()>();
+      case WordRepresentation::Word64():
+        return RepVector<RegisterRepresentation::Word64(),
+                         RegisterRepresentation::Word32()>();
+    }
+  }
+
+  base::Vector<const MaybeRegisterRepresentation> inputs_rep(
+      ZoneVector<MaybeRegisterRepresentation>& storage) const {
+    return InputsRepFactory::SingleRep(rep);
+  }
+
+  V<Word> input() const { return Base::input<Word>(0); }
+
+  explicit OverflowCheckedUnaryOp(V<Word> input, Kind kind,
+                                  WordRepresentation rep)
+      : Base(input), kind(kind), rep(rep) {}
+
+  void Validate(const Graph& graph) const {}
+  auto options() const { return std::tuple{kind, rep}; }
+};
+V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
+                                           OverflowCheckedUnaryOp::Kind kind);
 
 struct FloatUnaryOp : FixedArityOperationT<1, FloatUnaryOp> {
   enum class Kind : uint8_t {
@@ -3404,13 +3466,15 @@ struct DecodeExternalPointerOp
   auto options() const { return std::tuple{tag}; }
 };
 
-struct JSStackCheckOp : FixedArityOperationT<2, JSStackCheckOp> {
-  enum class Kind : bool { kFunctionEntry, kLoop };
+struct JSStackCheckOp : OperationT<JSStackCheckOp> {
+  enum class Kind : uint8_t { kFunctionEntry, kBuiltinEntry, kLoop };
   Kind kind;
 
   OpEffects Effects() const {
     switch (kind) {
       case Kind::kFunctionEntry:
+        return OpEffects().CanCallAnything();
+      case Kind::kBuiltinEntry:
         return OpEffects().CanCallAnything();
       case Kind::kLoop:
         // Loop body iteration stack checks can't write memory.
@@ -3428,7 +3492,10 @@ struct JSStackCheckOp : FixedArityOperationT<2, JSStackCheckOp> {
   }
 
   V<Context> native_context() const { return Base::input<Context>(0); }
-  V<FrameState> frame_state() const { return Base::input<FrameState>(1); }
+  OptionalV<FrameState> frame_state() const {
+    return input_count > 1 ? Base::input<FrameState>(1)
+                           : OptionalV<FrameState>::Nullopt();
+  }
 
   base::Vector<const RegisterRepresentation> outputs_rep() const { return {}; }
 
@@ -3437,11 +3504,29 @@ struct JSStackCheckOp : FixedArityOperationT<2, JSStackCheckOp> {
     return {};
   }
 
-  explicit JSStackCheckOp(V<Context> context, V<FrameState> frame_state,
+  explicit JSStackCheckOp(V<Context> context, OptionalV<FrameState> frame_state,
                           Kind kind)
-      : Base(context, frame_state), kind(kind) {}
+      : Base(1 + frame_state.has_value()), kind(kind) {
+    input(0) = context;
+    if (frame_state.has_value()) {
+      input(1) = frame_state.value();
+    }
+  }
 
-  void Validate(const Graph& graph) const {}
+  static JSStackCheckOp& New(Graph* graph, V<Context> context,
+                             OptionalV<FrameState> frame_state, Kind kind) {
+    return Base::New(graph, 1 + frame_state.has_value(), context, frame_state,
+                     kind);
+  }
+
+  void Validate(const Graph& graph) const {
+    DCHECK_EQ(kind == Kind::kBuiltinEntry, !frame_state().has_value());
+  }
+
+  template <typename Fn, typename Mapper>
+  V8_INLINE auto Explode(Fn fn, Mapper& mapper) const {
+    return fn(mapper.Map(native_context()), mapper.Map(frame_state()), kind);
+  }
 
   auto options() const { return std::tuple{kind}; }
 };
@@ -7419,6 +7504,13 @@ V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
   FOREACH_SIMD_128_UNARY_SIGN_EXTENSION_OPCODE(V)
 
 #define FOREACH_SIMD_128_UNARY_OPTIONAL_OPCODE(V)                             \
+  V(F16x8Abs)                                                                 \
+  V(F16x8Neg)                                                                 \
+  V(F16x8Sqrt)                                                                \
+  V(F16x8Ceil)                                                                \
+  V(F16x8Floor)                                                               \
+  V(F16x8Trunc)                                                               \
+  V(F16x8NearestInt)                                                          \
   V(F32x4Ceil)                                                                \
   V(F32x4Floor)                                                               \
   V(F32x4Trunc)                                                               \

@@ -2702,6 +2702,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       VectorLength vec_len = VectorLengthField::decode(opcode);
       if (vec_len == kV128) {
         switch (lane_size) {
+          case kL16: {
+            // F16x8Abs
+            CpuFeatureScope avx_scope(masm(), AVX);
+            __ Absph(i.OutputSimd128Register(), i.InputSimd128Register(0),
+                     kScratchRegister);
+            break;
+          }
           case kL32: {
             // F32x4Abs
             __ Absps(i.OutputSimd128Register(), i.InputSimd128Register(0),
@@ -2758,6 +2765,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       VectorLength vec_len = VectorLengthField::decode(opcode);
       if (vec_len == kV128) {
         switch (lane_size) {
+          case kL16: {
+            // F16x8Neg
+            CpuFeatureScope avx_scope(masm(), AVX);
+            __ Negph(i.OutputSimd128Register(), i.InputSimd128Register(0),
+                     kScratchRegister);
+            break;
+          }
           case kL32: {
             // F32x4Neg
             __ Negps(i.OutputSimd128Register(), i.InputSimd128Register(0),
@@ -3018,6 +3032,21 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
               zone(), this, masm(), operand, value, i, DetermineStubCallMode(),
               MachineRepresentation::kWord64, instr);
         }
+      }
+      break;
+    case kX64Movsh:
+      RecordTrapInfoIfNeeded(zone(), this, opcode, instr, __ pc_offset());
+      if (instr->HasOutput()) {
+        CpuFeatureScope f16c_scope(masm(), F16C);
+        CpuFeatureScope avx2_scope(masm(), AVX2);
+        __ vpbroadcastw(i.OutputDoubleRegister(), i.MemoryOperand());
+        __ vcvtph2ps(i.OutputDoubleRegister(), i.OutputDoubleRegister());
+      } else {
+        CpuFeatureScope f16c_scope(masm(), F16C);
+        size_t index = 0;
+        Operand operand = i.MemoryOperand(&index);
+        __ vcvtps2ph(kScratchDoubleReg, i.InputDoubleRegister(index), 0);
+        __ Pextrw(operand, kScratchDoubleReg, static_cast<uint8_t>(0));
       }
       break;
     case kX64Movss:
@@ -3384,6 +3413,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         XMMRegister dst = i.OutputSimd128Register();
         XMMRegister src = i.InputSimd128Register(0);
         switch (lane_size) {
+          case kL16: {
+            // F16x8Sqrt
+            CpuFeatureScope f16c_scope(masm(), F16C);
+            CpuFeatureScope avx_scope(masm(), AVX);
+
+            __ vcvtph2ps(kScratchSimd256Reg, src);
+            __ vsqrtps(kScratchSimd256Reg, kScratchSimd256Reg);
+            __ vcvtps2ph(dst, kScratchSimd256Reg, 0);
+            break;
+          }
           case kL32: {
             // F32x4Sqrt
             __ Sqrtps(dst, src);
@@ -3999,6 +4038,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       RoundingMode const mode =
           static_cast<RoundingMode>(MiscField::decode(instr->opcode()));
       __ Roundps(i.OutputSimd128Register(), i.InputSimd128Register(0), mode);
+      break;
+    }
+    case kX64F16x8Round: {
+      CpuFeatureScope f16c_scope(masm(), F16C);
+      CpuFeatureScope avx_scope(masm(), AVX);
+      RoundingMode const mode =
+          static_cast<RoundingMode>(MiscField::decode(instr->opcode()));
+      __ vcvtph2ps(kScratchSimd256Reg, i.InputSimd128Register(0));
+      __ vroundps(kScratchSimd256Reg, kScratchSimd256Reg, mode);
+      __ vcvtps2ph(i.OutputSimd128Register(), kScratchSimd256Reg, 0);
       break;
     }
     case kX64F64x2Round: {

@@ -1405,7 +1405,8 @@ class TurboshaftGraphBuildingInterface : public WasmGraphBuilderBase {
                const MemoryAccessImmediate& imm, const Value& index,
                Value* result) {
     bool needs_f16_to_f32_conv = false;
-    if (type.value() == LoadType::kF32LoadF16) {
+    if (type.value() == LoadType::kF32LoadF16 &&
+        !SupportedOperations::float16()) {
       needs_f16_to_f32_conv = true;
       type = LoadType::kI32Load16U;
     }
@@ -1574,7 +1575,8 @@ class TurboshaftGraphBuildingInterface : public WasmGraphBuilderBase {
                 const MemoryAccessImmediate& imm, const Value& index,
                 const Value& value) {
     bool needs_f32_to_f16_conv = false;
-    if (type.value() == StoreType::kF32StoreF16) {
+    if (type.value() == StoreType::kF32StoreF16 &&
+        !SupportedOperations::float16()) {
       needs_f32_to_f16_conv = true;
       type = StoreType::kI32Store16;
     }
@@ -3306,6 +3308,14 @@ class TurboshaftGraphBuildingInterface : public WasmGraphBuilderBase {
           MemoryRepresentation::Simd128());                       \
     }                                                             \
     break;
+      HANDLE_UNARY_OPTIONAL_OPCODE(F16x8Abs, float16, wasm_f16x8_abs)
+      HANDLE_UNARY_OPTIONAL_OPCODE(F16x8Neg, float16, wasm_f16x8_neg)
+      HANDLE_UNARY_OPTIONAL_OPCODE(F16x8Sqrt, float16, wasm_f16x8_sqrt)
+      HANDLE_UNARY_OPTIONAL_OPCODE(F16x8Ceil, float16, wasm_f16x8_ceil)
+      HANDLE_UNARY_OPTIONAL_OPCODE(F16x8Floor, float16, wasm_f16x8_floor)
+      HANDLE_UNARY_OPTIONAL_OPCODE(F16x8Trunc, float16, wasm_f16x8_trunc)
+      HANDLE_UNARY_OPTIONAL_OPCODE(F16x8NearestInt, float16,
+                                   wasm_f16x8_nearest_int)
       HANDLE_UNARY_OPTIONAL_OPCODE(F32x4Ceil, float32_round_up, wasm_f32x4_ceil)
       HANDLE_UNARY_OPTIONAL_OPCODE(F32x4Floor, float32_round_down,
                                    wasm_f32x4_floor)
@@ -3421,13 +3431,6 @@ class TurboshaftGraphBuildingInterface : public WasmGraphBuilderBase {
         CallCStackSlotToStackSlot(args[0].op, ExternalReference::extern_ref(), \
                                   MemoryRepresentation::Simd128());            \
     break;
-        HANDLE_F16X8_UN_OPCODE(F16x8Abs, wasm_f16x8_abs)
-        HANDLE_F16X8_UN_OPCODE(F16x8Neg, wasm_f16x8_neg)
-        HANDLE_F16X8_UN_OPCODE(F16x8Sqrt, wasm_f16x8_sqrt)
-        HANDLE_F16X8_UN_OPCODE(F16x8Ceil, wasm_f16x8_ceil)
-        HANDLE_F16X8_UN_OPCODE(F16x8Floor, wasm_f16x8_floor)
-        HANDLE_F16X8_UN_OPCODE(F16x8Trunc, wasm_f16x8_trunc)
-        HANDLE_F16X8_UN_OPCODE(F16x8NearestInt, wasm_f16x8_nearest_int)
         HANDLE_F16X8_UN_OPCODE(I16x8SConvertF16x8, wasm_i16x8_sconvert_f16x8)
         HANDLE_F16X8_UN_OPCODE(I16x8UConvertF16x8, wasm_i16x8_uconvert_f16x8)
         HANDLE_F16X8_UN_OPCODE(F16x8SConvertI16x8, wasm_f16x8_sconvert_i16x8)
@@ -5952,7 +5955,7 @@ class TurboshaftGraphBuildingInterface : public WasmGraphBuilderBase {
                          wasm_local_count - callee_sig->return_count();
     local_count += args != nullptr ? callee_sig->parameter_count() : 0;
     Handle<SharedFunctionInfo> shared_info;
-    Zone* zone = Asm().data()->shared_zone();
+    Zone* zone = Asm().data()->compilation_zone();
     auto* function_info = zone->New<compiler::FrameStateFunctionInfo>(
         compiler::FrameStateType::kLiftoffFunction,
         static_cast<uint16_t>(param_count), 0, static_cast<int>(local_count),

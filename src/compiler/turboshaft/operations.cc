@@ -198,6 +198,13 @@ std::ostream& operator<<(std::ostream& os, WordUnaryOp::Kind kind) {
   }
 }
 
+std::ostream& operator<<(std::ostream& os, OverflowCheckedUnaryOp::Kind kind) {
+  switch (kind) {
+    case OverflowCheckedUnaryOp::Kind::kAbs:
+      return os << "kAbs";
+  }
+}
+
 std::ostream& operator<<(std::ostream& os, FloatUnaryOp::Kind kind) {
   switch (kind) {
     case FloatUnaryOp::Kind::kAbs:
@@ -1456,6 +1463,8 @@ std::ostream& operator<<(std::ostream& os, JSStackCheckOp::Kind kind) {
   switch (kind) {
     case JSStackCheckOp::Kind::kFunctionEntry:
       return os << "function-entry";
+    case JSStackCheckOp::Kind::kBuiltinEntry:
+      return os << "builtin-entry";
     case JSStackCheckOp::Kind::kLoop:
       return os << "loop";
   }

@@ -21,6 +21,7 @@ namespace compiler {
   V(X64Movq)                                               \
   V(X64Movsd)                                              \
   V(X64Movss)                                              \
+  V(X64Movsh)                                              \
   V(X64Movsxbl)                                            \
   V(X64Movsxbq)                                            \
   V(X64Movsxlq)                                            \
@@ -237,6 +238,7 @@ namespace compiler {
   V(X64F32x4Round)                                   \
   V(X64F32x4DemoteF64x2Zero)                         \
   V(X64F32x4DemoteF64x4)                             \
+  V(X64F16x8Round)                                   \
   V(X64ISplat)                                       \
   V(X64IExtractLane)                                 \
   V(X64IAbs)                                         \

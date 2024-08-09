@@ -1268,9 +1268,11 @@ void WasmEngine::AddIsolate(Isolate* isolate) {
     // improved performance-wise).
     // The engine-wide metadata also includes global storage e.g. for the type
     // canonicalizer.
-    size_t engine_meta_data = engine->EstimateCurrentMemoryConsumption();
-    counters->wasm_engine_metadata_size_kb()->AddSample(
-        static_cast<int>(engine_meta_data / KB));
+    Histogram* metadata_histogram = counters->wasm_engine_metadata_size_kb();
+    if (metadata_histogram->Enabled()) {
+      size_t engine_meta_data = engine->EstimateCurrentMemoryConsumption();
+      metadata_histogram->AddSample(static_cast<int>(engine_meta_data / KB));
+    }
   };
   isolate->heap()->AddGCEpilogueCallback(callback, v8::kGCTypeMarkSweepCompact,
                                          nullptr);
@@ -1901,7 +1903,7 @@ void WasmEngine::PotentiallyFinishCurrentGC() {
 }
 
 size_t WasmEngine::EstimateCurrentMemoryConsumption() const {
-  UPDATE_WHEN_CLASS_CHANGES(WasmEngine, 760);
+  UPDATE_WHEN_CLASS_CHANGES(WasmEngine, 728);
   UPDATE_WHEN_CLASS_CHANGES(IsolateInfo, 184);
   UPDATE_WHEN_CLASS_CHANGES(NativeModuleInfo, 144);
   UPDATE_WHEN_CLASS_CHANGES(CurrentGCInfo, 96);

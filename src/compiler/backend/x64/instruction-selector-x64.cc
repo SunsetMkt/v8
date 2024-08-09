@@ -1054,7 +1054,8 @@ ArchOpcode GetLoadOpcode(turboshaft::MemoryRepresentation loaded_rep,
       DCHECK_EQ(result_rep, RegisterRepresentation::Word64());
       return kX64Movq;
     case MemoryRepresentation::Float16():
-      UNIMPLEMENTED();
+      DCHECK_EQ(result_rep, RegisterRepresentation::Float32());
+      return kX64Movsh;
     case MemoryRepresentation::Float32():
       DCHECK_EQ(result_rep, RegisterRepresentation::Float32());
       return kX64Movss;
@@ -1106,6 +1107,9 @@ ArchOpcode GetLoadOpcode(turboshaft::MemoryRepresentation loaded_rep,
 ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
   ArchOpcode opcode;
   switch (load_rep.representation()) {
+    case MachineRepresentation::kFloat16:
+      opcode = kX64Movsh;
+      break;
     case MachineRepresentation::kFloat32:
       opcode = kX64Movss;
       break;
@@ -1159,8 +1163,6 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
     case MachineRepresentation::kSimd256:  // Fall through.
       opcode = kX64Movdqu256;
       break;
-    case MachineRepresentation::kFloat16:
-      UNIMPLEMENTED();
     case MachineRepresentation::kNone:     // Fall through.
     case MachineRepresentation::kMapWord:  // Fall through.
     case MachineRepresentation::kIndirectPointer:  // Fall through.
@@ -1185,7 +1187,7 @@ ArchOpcode GetStoreOpcode(turboshaft::MemoryRepresentation stored_rep) {
     case MemoryRepresentation::Uint64():
       return kX64Movq;
     case MemoryRepresentation::Float16():
-      UNIMPLEMENTED();
+      return kX64Movsh;
     case MemoryRepresentation::Float32():
       return kX64Movss;
     case MemoryRepresentation::Float64():
@@ -1214,6 +1216,8 @@ ArchOpcode GetStoreOpcode(turboshaft::MemoryRepresentation stored_rep) {
 
 ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
   switch (store_rep.representation()) {
+    case MachineRepresentation::kFloat16:
+      return kX64Movsh;
     case MachineRepresentation::kFloat32:
       return kX64Movss;
     case MachineRepresentation::kFloat64:
@@ -1246,8 +1250,6 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
       return kX64Movdqu;
     case MachineRepresentation::kSimd256:
       return kX64Movdqu256;
-    case MachineRepresentation::kFloat16:
-      UNIMPLEMENTED();
     case MachineRepresentation::kNone:
     case MachineRepresentation::kMapWord:
     case MachineRepresentation::kProtectedPointer:
@@ -3743,6 +3745,10 @@ void VisitFloatUnop(InstructionSelectorT<Adapter>* selector,
 
 #ifdef V8_ENABLE_WEBASSEMBLY
 #define RR_OP_T_LIST_WEBASSEMBLY(V)                                       \
+  V(F16x8Ceil, kX64F16x8Round | MiscField::encode(kRoundUp))              \
+  V(F16x8Floor, kX64F16x8Round | MiscField::encode(kRoundDown))           \
+  V(F16x8Trunc, kX64F16x8Round | MiscField::encode(kRoundToZero))         \
+  V(F16x8NearestInt, kX64F16x8Round | MiscField::encode(kRoundToNearest)) \
   V(F32x4Ceil, kX64F32x4Round | MiscField::encode(kRoundUp))              \
   V(F32x4Floor, kX64F32x4Round | MiscField::encode(kRoundDown))           \
   V(F32x4Trunc, kX64F32x4Round | MiscField::encode(kRoundToZero))         \
@@ -5970,14 +5976,17 @@ VISIT_ATOMIC_BINOP(Xor)
 #define SIMD_UNOP_LANE_SIZE_VECTOR_LENGTH_LIST(V) \
   V(F32x4Abs, FAbs, kL32, kV128)                  \
   V(I32x4Abs, IAbs, kL32, kV128)                  \
+  V(F16x8Abs, FAbs, kL16, kV128)                  \
   V(I16x8Abs, IAbs, kL16, kV128)                  \
   V(I8x16Abs, IAbs, kL8, kV128)                   \
   V(F32x4Neg, FNeg, kL32, kV128)                  \
   V(I32x4Neg, INeg, kL32, kV128)                  \
+  V(F16x8Neg, FNeg, kL16, kV128)                  \
   V(I16x8Neg, INeg, kL16, kV128)                  \
   V(I8x16Neg, INeg, kL8, kV128)                   \
   V(F64x2Sqrt, FSqrt, kL64, kV128)                \
   V(F32x4Sqrt, FSqrt, kL32, kV128)                \
+  V(F16x8Sqrt, FSqrt, kL16, kV128)                \
   V(I64x2BitMask, IBitMask, kL64, kV128)          \
   V(I32x4BitMask, IBitMask, kL32, kV128)          \
   V(I16x8BitMask, IBitMask, kL16, kV128)          \

@@ -20,6 +20,7 @@ namespace compiler {
   V(Arm64Ldrh)                                             \
   V(Arm64LdrQ)                                             \
   V(Arm64LdrS)                                             \
+  V(Arm64LdrH)                                             \
   V(Arm64Ldrsb)                                            \
   V(Arm64LdrsbW)                                           \
   V(Arm64Ldrsh)                                            \
@@ -42,6 +43,7 @@ namespace compiler {
   V(Arm64Strh)                                             \
   V(Arm64StrQ)                                             \
   V(Arm64StrS)                                             \
+  V(Arm64StrH)                                             \
   V(Arm64StrW)                                             \
   V(Arm64StrWPair)                                         \
   V(Arm64LdrDecompressTaggedSigned)                        \
@@ -294,6 +296,10 @@ namespace compiler {
   V(Arm64Poke)                                       \
   V(Arm64PokePair)                                   \
   V(Arm64Peek)                                       \
+  V(Arm64Float16RoundDown)                           \
+  V(Arm64Float16RoundUp)                             \
+  V(Arm64Float16RoundTruncate)                       \
+  V(Arm64Float16RoundTiesEven)                       \
   V(Arm64Float32Cmp)                                 \
   V(Arm64Float32Add)                                 \
   V(Arm64Float32Sub)                                 \

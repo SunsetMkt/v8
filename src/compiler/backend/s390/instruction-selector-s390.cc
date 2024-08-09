@@ -2942,8 +2942,23 @@ void InstructionSelectorT<TurboshaftAdapter>::VisitWordCompareZero(
                         cont);
                   }
                 }
-              // TODO(miladfarca): Add kInt64AbsWithOverflow and
-              // kInt32AbsWithOverflow
+              default:
+                break;
+            }
+          } else if (const OverflowCheckedUnaryOp* unop =
+                         TryCast<OverflowCheckedUnaryOp>(node)) {
+            const bool is64 = unop->rep == WordRepresentation::Word64();
+            switch (unop->kind) {
+              case OverflowCheckedUnaryOp::Kind::kAbs:
+                if (is64) {
+                  cont->OverwriteAndNegateIfEqual(kOverflow);
+                  return VisitWord64UnaryOp(this, node, kS390_Abs64,
+                                            OperandMode::kNone, cont);
+                } else {
+                  cont->OverwriteAndNegateIfEqual(kOverflow);
+                  return VisitWord32UnaryOp(this, node, kS390_Abs32,
+                                            OperandMode::kNone, cont);
+                }
               default:
                 break;
             }
@@ -4216,7 +4231,14 @@ SIMD_RELAXED_OP_LIST(SIMD_VISIT_RELAXED_OP)
 #define F16_OP_LIST(V) \
   V(F16x8Splat)        \
   V(F16x8ExtractLane)  \
-  V(F16x8ReplaceLane)
+  V(F16x8ReplaceLane)  \
+  V(F16x8Abs)          \
+  V(F16x8Neg)          \
+  V(F16x8Sqrt)         \
+  V(F16x8Floor)        \
+  V(F16x8Ceil)         \
+  V(F16x8Trunc)        \
+  V(F16x8NearestInt)
 
 #define VISIT_F16_OP(name)                                       \
   template <typename Adapter>                                    \
@@ -4666,6 +4688,8 @@ InstructionSelector::SupportedMachineOperatorFlags() {
          MachineOperatorBuilder::kFloat64RoundTiesEven |
          MachineOperatorBuilder::kFloat64RoundTiesAway |
          MachineOperatorBuilder::kWord32Popcnt |
+         MachineOperatorBuilder::kInt32AbsWithOverflow |
+         MachineOperatorBuilder::kInt64AbsWithOverflow |
          MachineOperatorBuilder::kWord64Popcnt;
 }
 

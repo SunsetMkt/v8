@@ -2423,7 +2423,8 @@ void InstructionSelectorT<TurboshaftAdapter>::VisitProjection(
   using namespace turboshaft;  // NOLINT(build/namespaces)
   const ProjectionOp& projection = this->Get(node).Cast<ProjectionOp>();
   const Operation& value_op = this->Get(projection.input());
-  if (value_op.Is<OverflowCheckedBinopOp>() || value_op.Is<TryChangeOp>() ||
+  if (value_op.Is<OverflowCheckedBinopOp>() ||
+      value_op.Is<OverflowCheckedUnaryOp>() || value_op.Is<TryChangeOp>() ||
       value_op.Is<Word32PairBinopOp>()) {
     if (projection.index == 0u) {
       EmitIdentity(node);
@@ -2804,10 +2805,15 @@ void InstructionSelectorT<Adapter>::TryPrepareScheduleFirstProjection(
   if constexpr (Adapter::IsTurboshaft) {
     using namespace turboshaft;  // NOLINT(build/namespaces)
     auto* binop = this->Get(node).template TryCast<OverflowCheckedBinopOp>();
-    if (binop == nullptr) return;
-    DCHECK(binop->kind == OverflowCheckedBinopOp::Kind::kSignedAdd ||
-           binop->kind == OverflowCheckedBinopOp::Kind::kSignedSub ||
-           binop->kind == OverflowCheckedBinopOp::Kind::kSignedMul);
+    auto* unop = this->Get(node).template TryCast<OverflowCheckedUnaryOp>();
+    if (binop == nullptr && unop == nullptr) return;
+    if (binop) {
+      DCHECK(binop->kind == OverflowCheckedBinopOp::Kind::kSignedAdd ||
+             binop->kind == OverflowCheckedBinopOp::Kind::kSignedSub ||
+             binop->kind == OverflowCheckedBinopOp::Kind::kSignedMul);
+    } else {
+      DCHECK_EQ(unop->kind, OverflowCheckedUnaryOp::Kind::kAbs);
+    }
   } else {
     switch (node->opcode()) {
       case IrOpcode::kInt32AddWithOverflow:
@@ -4263,6 +4269,20 @@ void InstructionSelectorT<TurbofanAdapter>::VisitNode(Node* node) {
       return MarkAsFloat32(node), VisitF16x8ExtractLane(node);
     case IrOpcode::kF16x8ReplaceLane:
       return MarkAsSimd128(node), VisitF16x8ReplaceLane(node);
+    case IrOpcode::kF16x8Abs:
+      return MarkAsSimd128(node), VisitF16x8Abs(node);
+    case IrOpcode::kF16x8Neg:
+      return MarkAsSimd128(node), VisitF16x8Neg(node);
+    case IrOpcode::kF16x8Sqrt:
+      return MarkAsSimd128(node), VisitF16x8Sqrt(node);
+    case IrOpcode::kF16x8Ceil:
+      return MarkAsSimd128(node), VisitF16x8Ceil(node);
+    case IrOpcode::kF16x8Floor:
+      return MarkAsSimd128(node), VisitF16x8Floor(node);
+    case IrOpcode::kF16x8Trunc:
+      return MarkAsSimd128(node), VisitF16x8Trunc(node);
+    case IrOpcode::kF16x8NearestInt:
+      return MarkAsSimd128(node), VisitF16x8NearestInt(node);
 
       // SIMD256
 #if defined(V8_TARGET_ARCH_X64) && defined(V8_ENABLE_WASM_SIMD256_REVEC)
@@ -5076,6 +5096,24 @@ void InstructionSelectorT<TurboshaftAdapter>::VisitNode(
       }
       UNREACHABLE();
     }
+    case Opcode::kOverflowCheckedUnary: {
+      const auto& unop = op.Cast<OverflowCheckedUnaryOp>();
+      if (unop.rep == WordRepresentation::Word32()) {
+        MarkAsWord32(node);
+        switch (unop.kind) {
+          case OverflowCheckedUnaryOp::Kind::kAbs:
+            return VisitInt32AbsWithOverflow(node);
+        }
+      } else {
+        DCHECK_EQ(unop.rep, WordRepresentation::Word64());
+        MarkAsWord64(node);
+        switch (unop.kind) {
+          case OverflowCheckedUnaryOp::Kind::kAbs:
+            return VisitInt64AbsWithOverflow(node);
+        }
+      }
+      UNREACHABLE();
+    }
     case Opcode::kShift: {
       const auto& shift = op.Cast<ShiftOp>();
       if (shift.rep == RegisterRepresentation::Word32()) {
@@ -5326,6 +5364,8 @@ void InstructionSelectorT<TurboshaftAdapter>::VisitNode(
       return;
     case Opcode::kDebugBreak:
       return VisitDebugBreak(node);
+    case Opcode::kAbortCSADcheck:
+      return VisitAbortCSADcheck(node);
     case Opcode::kSelect: {
       const SelectOp& select = op.Cast<SelectOp>();
       // If there is a Select, then it should only be one that is supported by
@@ -5732,6 +5772,14 @@ bool InstructionSelectorT<Adapter>::ZeroExtendsWord32ToWord64(
   const int kMaxRecursionDepth = 100;
 
   if (this->IsPhi(node)) {
+    // Intermediate results from previous calls are not necessarily correct.
+    if (recursion_depth == 0) {
+      static_assert(sizeof(Upper32BitsState) == 1);
+      memset(phi_states_.data(),
+             static_cast<int>(Upper32BitsState::kNotYetChecked),
+             phi_states_.size());
+    }
+
     Upper32BitsState current = phi_states_[this->id(node)];
     if (current != Upper32BitsState::kNotYetChecked) {
       return current == Upper32BitsState::kUpperBitsGuaranteedZero;

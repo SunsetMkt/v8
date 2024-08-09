@@ -189,6 +189,9 @@ TURBOSHAFT_SIMPLIFIED_OPERATION_LIST(SHOULD_HAVE_BEEN_LOWERED)
 TURBOSHAFT_OTHER_OPERATION_LIST(SHOULD_HAVE_BEEN_LOWERED)
 TURBOSHAFT_WASM_OPERATION_LIST(SHOULD_HAVE_BEEN_LOWERED)
 SHOULD_HAVE_BEEN_LOWERED(Dead)
+// {AbortCSADcheck} is not emitted in pipelines that still use
+// {RecreateSchedule}.
+SHOULD_HAVE_BEEN_LOWERED(AbortCSADcheck)
 #undef SHOULD_HAVE_BEEN_LOWERED
 
 Node* ScheduleBuilder::ProcessOperation(const WordBinopOp& op) {
@@ -408,6 +411,18 @@ Node* ScheduleBuilder::ProcessOperation(const WordUnaryOp& op) {
   }
   return AddNode(o, {GetNode(op.input())});
 }
+
+Node* ScheduleBuilder::ProcessOperation(const OverflowCheckedUnaryOp& op) {
+  bool word64 = op.rep == WordRepresentation::Word64();
+  const Operator* o;
+  switch (op.kind) {
+    case OverflowCheckedUnaryOp::Kind::kAbs:
+      o = word64 ? machine.Int64AbsWithOverflow().op()
+                 : machine.Int32AbsWithOverflow().op();
+  }
+  return AddNode(o, {GetNode(op.input())});
+}
+
 Node* ScheduleBuilder::ProcessOperation(const FloatUnaryOp& op) {
   DCHECK(FloatUnaryOp::IsSupported(op.kind, op.rep));
   bool float64 = op.rep == FloatRepresentation::Float64();
